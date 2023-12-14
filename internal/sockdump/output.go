@@ -72,8 +72,8 @@ func (o *Output) Output(pkt *Packet) {
 }
 
 func (o *Output) printHeader(pkt *Packet, data []byte) {
-	fmt.Fprintf(o.w, "%s >>> process %s [%d -> %d] path %s len %d(%d)\n",
-		time.Now().Format(time.DateTime),
+	fmt.Fprintf(o.w, "%s >>> process %d/%s [%d -> %d] path %s len %d(%d)\n",
+		time.Now().Format(time.DateTime), pkt.Pid,
 		nullTerminatedString(pkt.Comm[:]), pkt.Pid, pkt.PeerPid,
 		nullTerminatedString(pkt.Path[:]), len(data), pkt.Len)
 }

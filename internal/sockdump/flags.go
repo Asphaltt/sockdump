@@ -8,6 +8,7 @@ import (
 )
 
 type Flags struct {
+	Pid          uint
 	SegSize      uint
 	SegsPerMsg   uint
 	SegsInBuffer uint
@@ -22,6 +23,7 @@ type Flags struct {
 func NewFlags() *Flags {
 	var f Flags
 
+	flags.UintVar(&f.Pid, "pid", 0, "pid of the process to trace")
 	flags.UintVar(&f.SegSize, "seg-size", 1024*50, "max segment size, increase this number if packet size is longer than captured size")
 	flags.UintVar(&f.SegsPerMsg, "segs-per-msg", 10, "max number of iovec segments")
 	flags.UintVar(&f.SegsInBuffer, "segs-in-buffer", 100, "max number of segs in perf event buffer, increate this number if message is dropped")
@@ -53,7 +55,12 @@ If the application runs inside a container, the path inside the container should
 	return &f
 }
 
-func (f *Flags) SockPath() (path [108]byte) {
-	copy(path[:], f.Sock)
-	return
+func (f *Flags) Config() Config {
+	cfg := Config{
+		Pid:        uint32(f.Pid),
+		SegSize:    uint32(f.SegSize),
+		SegsPerMsg: uint32(f.SegsPerMsg),
+	}
+	copy(cfg.SockPath[:], f.Sock)
+	return cfg
 }

@@ -22,11 +22,21 @@ extern int LINUX_KERNEL_VERSION __kconfig;
 #define SOCK_PATH_OFFSET    \
     (offsetof(struct unix_address, name) + offsetof(struct sockaddr_un, sun_path))
 
-static const volatile __u32 SS_SEG_SIZE = SS_MAX_SEG_SIZE;
-static const volatile __u32 SS_SEGS_PER_MSG = SS_MAX_SEGS_PER_MSG;
+struct config {
+    __u32 pid;
+    __u32 seg_size;
+    __u32 segs_per_msg;
+    char sock_path[UNIX_PATH_MAX];
+};
 
-// Will be replaced by --sock.
-static const volatile char SOCK_PATH[UNIX_PATH_MAX] = "/tmp/sockdump.sock";
+static const volatile struct config CONFIG = {
+    .pid = 0,
+    .seg_size = SS_MAX_SEG_SIZE,
+    .segs_per_msg = SS_MAX_SEGS_PER_MSG,
+    .sock_path = "/tmp/sockdump.sock",
+};
+
+#define cfg ((const volatile struct config *) &CONFIG)
 
 struct packet {
     __u32 pid;
@@ -69,18 +79,18 @@ __is_str_prefix(const char *str, const char *prefix, int siz)
 static __noinline bool
 __is_path_matched(__u64 *path)
 {
-    __u64 *sock_path = (__u64 *) SOCK_PATH;
+    __u64 *sock_path = (__u64 *) cfg->sock_path;
     int i;
 
     for (i = 0; i < UNIX_PATH_MAX / 8 && sock_path[i]; i++) {
-        if (path[i] != SOCK_PATH[i])
+        if (path[i] != sock_path[i])
             return __is_str_prefix((const char *) &path[i],
-                                   (const char *) &SOCK_PATH[i], 8);
+                                   (const char *) &sock_path[i], 8);
     }
 
     if (i == UNIX_PATH_MAX / 8)
         return __is_str_prefix((const char *) &path[i],
-                               (const char *) &SOCK_PATH[i], 4);
+                               (const char *) &sock_path[i], 4);
 
     return true;
 }
@@ -109,7 +119,7 @@ match_path_of_usk(struct unix_sock *usk, __u64 *path)
 static __always_inline void
 collect_data(void *ctx, struct packet *pkt, char *buf, __u32 len)
 {
-    __u32 seg_size = SS_SEG_SIZE, n;
+    __u32 seg_size = cfg->seg_size, n;
 
     pkt->flags = 0;
     pkt->len = len;
@@ -133,7 +143,11 @@ __usk_sendmsg(void *ctx, struct socket *sock, struct msghdr *msg, size_t len)
     struct iov_iter *iter;
     struct packet *pkt;
     __u64 *path, nsegs;
-    __u32 n;
+    __u32 n, pid;
+
+    pid = bpf_get_current_pid_tgid() >> 32;
+    if (cfg->pid && cfg->pid != pid)
+        return 0;
 
     n = bpf_get_smp_processor_id();
     pkt = bpf_map_lookup_elem(&packets, &n);
@@ -155,7 +169,7 @@ __usk_sendmsg(void *ctx, struct socket *sock, struct msghdr *msg, size_t len)
             return 0;
     }
 
-    pkt->pid = bpf_get_current_pid_tgid() >> 32;
+    pkt->pid = pid;
     bpf_get_current_comm(&pkt->comm, sizeof(pkt->comm));
     BPF_CORE_READ_INTO(&numbers, sock, sk, sk_peer_pid, numbers);
     pkt->peer_pid = numbers[0].nr;
@@ -182,7 +196,7 @@ __usk_sendmsg(void *ctx, struct socket *sock, struct msghdr *msg, size_t len)
 
     iov = (typeof(iov)) BPF_CORE_READ(iter, kvec);
 
-    n = SS_SEGS_PER_MSG > SS_MAX_SEGS_PER_MSG ? SS_MAX_SEGS_PER_MSG : SS_SEGS_PER_MSG;
+    n = cfg->segs_per_msg > SS_MAX_SEGS_PER_MSG ? SS_MAX_SEGS_PER_MSG : cfg->segs_per_msg;
     nsegs = BPF_CORE_READ(iter, nr_segs);
     for (int i = 0; i < SS_MAX_SEGS_PER_MSG; i++) {
         if (i >= nsegs || i >= n)

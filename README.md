@@ -11,6 +11,7 @@ Supports STREAM and DGRAM types.
 Usage of ./sockdump:
       --format string         output format (string, hex, hexstring, pcap) (default "hex")
       --output string         output file, default stdout
+      --pid uint              pid of the process to trace
       --seg-size uint         max segment size, increase this number if packet size is longer than captured size (default 51200)
       --segs-in-buffer uint   max number of segs in perf event buffer, increate this number if message is dropped (default 100)
       --segs-per-msg uint     max number of iovec segments (default 10)

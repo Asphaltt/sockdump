@@ -40,9 +40,7 @@ func main() {
 	}
 
 	if err := spec.RewriteConstants(map[string]interface{}{
-		"SS_SEG_SIZE":     uint32(flags.SegSize),
-		"SS_SEGS_PER_MSG": uint32(flags.SegsPerMsg),
-		"SOCK_PATH":       flags.SockPath(),
+		"CONFIG": flags.Config(),
 	}); err != nil {
 		log.Fatalf("Failed to rewrite constants: %v", err)
 	}

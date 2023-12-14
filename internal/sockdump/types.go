@@ -12,3 +12,10 @@ type Packet struct {
 	Path    [108]byte
 	Data    [1024 * 50]byte
 }
+
+type Config struct {
+	Pid        uint32
+	SegSize    uint32
+	SegsPerMsg uint32
+	SockPath   [108]byte
+}
