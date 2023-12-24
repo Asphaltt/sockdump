@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"os"
 	"time"
 	"unsafe"
@@ -85,7 +86,7 @@ func (o *Output) outputString(pkt *Packet, data []byte) {
 	}
 
 	if pkt.Flags != 0 {
-		fmt.Fprintf(o.w, "error")
+		fmt.Fprintln(o.w, "error")
 	} else {
 		fmt.Fprintf(o.w, "%s\n", nullTerminatedString(data))
 	}
@@ -98,7 +99,7 @@ func (o *Output) outputHex(pkt *Packet, data []byte) {
 	}
 
 	if pkt.Flags != 0 {
-		fmt.Fprintf(o.w, "error")
+		fmt.Fprintln(o.w, "error")
 	} else {
 		fmt.Fprintln(o.w, hex.Dump(data))
 	}
@@ -111,7 +112,7 @@ func (o *Output) outputHexString(pkt *Packet, data []byte) {
 	}
 
 	if pkt.Flags != 0 {
-		fmt.Fprintf(o.w, "error")
+		fmt.Fprintln(o.w, "error")
 	} else {
 		fmt.Fprintf(o.w, "%s\n", hex.EncodeToString(data))
 	}
@@ -137,7 +138,7 @@ func (o *Output) outputPcap(pkt *Packet, data []byte) {
 		Length:         len(data),
 		InterfaceIndex: 0,
 	}, data); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to write pcap packet: %v", err)
+		log.Printf("failed to write pcap packet: %v", err)
 	}
 }
 
@@ -152,5 +153,8 @@ func nullTerminated(s []byte) []byte {
 
 func nullTerminatedString(s []byte) string {
 	s = nullTerminated(s)
+	if len(s) == 0 {
+		return ""
+	}
 	return unsafe.String(&s[0], len(s))
 }

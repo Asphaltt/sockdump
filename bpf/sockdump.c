@@ -68,10 +68,9 @@ __is_kernel_ge_6_0_0(void)
 static __always_inline bool
 __is_str_prefix(const char *str, const char *prefix, int siz)
 {
-    for (int i = 0; i < siz && prefix[i]; i++) {
+    for (int i = 0; i < siz && prefix[i]; i++)
         if (str[i] != prefix[i])
             return false;
-    }
 
     return true;
 }
@@ -82,11 +81,13 @@ __is_path_matched(__u64 *path)
     __u64 *sock_path = (__u64 *) cfg->sock_path;
     int i;
 
-    for (i = 0; i < UNIX_PATH_MAX / 8 && sock_path[i]; i++) {
+    // 1. Use __u64 to reduce iterations.
+    // 2. Use __is_str_prefix() to match the prefix of the path.
+
+    for (i = 0; i < UNIX_PATH_MAX / 8 && sock_path[i]; i++)
         if (path[i] != sock_path[i])
             return __is_str_prefix((const char *) &path[i],
                                    (const char *) &sock_path[i], 8);
-    }
 
     if (i == UNIX_PATH_MAX / 8)
         return __is_str_prefix((const char *) &path[i],
@@ -102,18 +103,29 @@ match_path_of_usk(struct unix_sock *usk, __u64 *path)
     __u8 one_byte = 0;
     char *sock_path;
 
+    // Skip current capture if addr->len is zero.
+
     addr = BPF_CORE_READ(usk, addr);
     if (!BPF_CORE_READ(addr, len))
         return false;
 
+    // 1. Use offset instead of BPF_CORE_READ() to get the address of the path.
+    // 2. Check if it's "@/path/to/unix.sock".
+
     sock_path = (char *) addr + SOCK_PATH_OFFSET;
     bpf_probe_read_kernel(&one_byte, 1, sock_path);
-    if (one_byte == 0)
-        bpf_probe_read_kernel_str(path, UNIX_PATH_MAX, sock_path + 1);
-    else
+    if (one_byte)
         bpf_probe_read_kernel_str(path, UNIX_PATH_MAX, sock_path);
+    else
+        bpf_probe_read_kernel_str(path, UNIX_PATH_MAX, sock_path + 1);
 
     return __is_path_matched(path);
+}
+
+static __always_inline bool
+__is_sock_path_matched(struct unix_sock *usk, __u64 *path)
+{
+    return usk && match_path_of_usk(usk, path);
 }
 
 static __always_inline void
@@ -123,6 +135,9 @@ collect_data(void *ctx, struct packet *pkt, char *buf, __u32 len)
 
     pkt->flags = 0;
     pkt->len = len;
+
+    // It's necessary to check the maximum size of the segment. Otherwise, the
+    // verifier will complain about the out-of-bound access.
 
     n = len > seg_size ? seg_size : len;
     if (n < SS_MAX_SEG_SIZE)
@@ -137,9 +152,9 @@ collect_data(void *ctx, struct packet *pkt, char *buf, __u32 len)
 static __noinline int
 __usk_sendmsg(void *ctx, struct socket *sock, struct msghdr *msg, size_t len)
 {
+    struct unix_sock *usk, *peer;
     const struct iovec *iov;
     struct upid numbers[1];
-    struct unix_sock *usk;
     struct iov_iter *iter;
     struct packet *pkt;
     __u64 *path, nsegs;
@@ -157,17 +172,10 @@ __usk_sendmsg(void *ctx, struct socket *sock, struct msghdr *msg, size_t len)
     path = (__u64 *) pkt->path;
 
     usk = bpf_skc_to_unix_sock(sock->sk);
-    if (!usk)
+    peer = usk ? bpf_skc_to_unix_sock(usk->peer) : NULL;
+    if (!__is_sock_path_matched(usk, path) &&
+        !__is_sock_path_matched(peer, path))
         return 0;
-
-    if (!match_path_of_usk(usk, path)) {
-        usk = bpf_skc_to_unix_sock(usk->peer);
-        if (!usk)
-            return 0;
-
-        if (!match_path_of_usk(usk, path))
-            return 0;
-    }
 
     pkt->pid = pid;
     bpf_get_current_comm(&pkt->comm, sizeof(pkt->comm));
